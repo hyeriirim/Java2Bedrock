@@ -291,6 +291,10 @@ else
   cd ./target/rp > /dev/null && zip -rq8 geyser_resources.mcpack . -x "*/.*" && cd ../.. > /dev/null && mv ./target/rp/geyser_resources.mcpack ./target/packaged/geyser_resources.mcpack
   mkdir ./target/unpackaged
   mv ./target/rp ./target/unpackaged/rp && mv ./target/bp ./target/unpackaged/bp
+  # Generate geyser_mappings.json in fallback branch
+  status_message process "Creating Geyser mappings in target directory (fallback)"
+  echo '{"format_version":"1","items":{}}' | sponge ./target/geyser_mappings.json
+  cp ./target/geyser_mappings.json ./target/unpackaged/geyser_mappings.json 2>/dev/null || true
 
   exit
 fi
@@ -1244,31 +1248,37 @@ fi
 
 status_message process "Creating Geyser mappings in target directory"
 echo
-jq '
-def to_mappings:
-  if type == "object" then . else {} end
-  | to_entries
-  | map(.value)
-  | group_by(.item)
-  | map({
-      ("minecraft:" + .[0].item): map({
-        "name": .path_hash,
-        "allow_offhand": true,
-        "icon": (if .generated == true then .path_hash else (.bedrock_icon.icon // "camera") end)
-      }
-      + (if (.generated == false and .bedrock_icon.frame != null) then {"frame": .bedrock_icon.frame} else {} end)
-      + (if .nbt.CustomModelData != null then {"custom_model_data": .nbt.CustomModelData} else {} end)
-      + (if .nbt.Damage != null then {"damage_predicate": .nbt.Damage} else {} end)
-      + (if .nbt.Unbreakable != null then {"unbreakable": .nbt.Unbreakable} else {} end)
-      )
-    })
-  | add // {};
+# Safety: ensure config.json exists and is a valid object
+if [ ! -s config.json ] || ! jq -e 'type == "object"' config.json > /dev/null 2>&1; then
+  status_message critical "config.json is empty or invalid, writing minimal geyser_mappings.json"
+  echo '{"format_version":"1","items":{}}' | sponge ./target/geyser_mappings.json
+else
+  jq '
+  ([map(
+    {
+      ("minecraft:" + .item): [
+        {
+          "name": .path_hash,
+          "allow_offhand": true,
+          "icon": (if .generated == true then .path_hash else .bedrock_icon.icon end)
+        }
+        + (if (.generated == false) then {"frame": (.bedrock_icon.frame)} else {} end)
+        + (if .nbt.CustomModelData then {"custom_model_data": (.nbt.CustomModelData)} else {} end)
+        + (if .nbt.Damage then {"damage_predicate": (.nbt.Damage)} else {} end)
+        + (if .nbt.Unbreakable then {"unbreakable": (.nbt.Unbreakable)} else {} end)
+      ]
+    }
+  ) 
+  | map(to_entries[])
+  | group_by(.key)[] 
+  | {(.[0].key) : map(.value) | add}] | add) as $mappings
+  | {
+      "format_version": "1",
+      "items": $mappings
+    }
+  ' config.json | sponge ./target/geyser_mappings.json
+fi
 
-{
-  "format_version": "1",
-  "items": (to_mappings)
-}
-' config.json | sponge ./target/geyser_mappings.json
 
 # Add sprites if sprites.json exists in the root pack
 if [ -f sprites.json ]; then
@@ -1340,6 +1350,7 @@ jq 'delpaths([paths | select(.[-1] | strings | startswith("gmdl_atlas_"))])' ./t
 cd ./target/rp > /dev/null && zip -rq8 geyser_resources.mcpack . -x "*/.*" && cd ../.. > /dev/null && mv ./target/rp/geyser_resources.mcpack ./target/packaged/geyser_resources.mcpack
 mkdir ./target/unpackaged
 mv ./target/rp ./target/unpackaged/rp && mv ./target/bp ./target/unpackaged/bp
+cp ./target/geyser_mappings.json ./target/unpackaged/geyser_mappings.json 2>/dev/null || true
 
 echo
 printf "\e[32m[+]\e[m \e[1m\e[37mConversion Process Complete\e[m\n\n\e[37mExiting...\e[m\n\n"

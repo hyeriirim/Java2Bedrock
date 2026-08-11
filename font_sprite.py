@@ -1,86 +1,79 @@
-import os
+"""
+font_sprite.py - Bedrock glyph sheet assembler.
+Replicates the original sprite() function that creates 16x16 glyph grid sheets,
+but works in-memory without requiring disk-based export/ and images/ folders.
+
+The original code:
+1. Listed all 256 exported PNGs in export/<page>/ (sorted by filename)
+2. Got tile size from the first frame
+3. Created a 16-row spritesheet with up to 16 columns per row
+4. Pasted each frame in order
+
+This version does the same but accepts an in-memory dict of glyph images.
+"""
 from PIL import Image
+import os
 
 try:
-    Resampling_LANCZOS = Image.Resampling.LANCZOS
-    Resampling_NEAREST = Image.Resampling.NEAREST
+    RESAMPLING_LANCZOS = Image.Resampling.LANCZOS
 except AttributeError:
-    Resampling_LANCZOS = Image.LANCZOS
-    Resampling_NEAREST = Image.NEAREST
+    RESAMPLING_LANCZOS = Image.LANCZOS
 
 
-def create_glyph_sheet(glyph_page, glyph_entries, output_dir="staging/target/rp/font", tile_size=256):
+def sprite(glyph_page, tile_size, glyph_images, output_dir="staging/target/rp/font"):
     """
-    Creates an HD Bedrock font glyph sheet (16x16 grid of character cells) for a given unicode page.
-    glyph_page: 2-character hex string (e.g. 'E0', '00', '1F')
-    glyph_entries: dict mapping sub_index (0..255) -> dict containing:
-        - "img": PIL Image object of the character
-        - "height": Java height property (default 8)
-        - "ascent": Java ascent property (default 7)
-        - "gui_offset": [dx, dy] optional GUI offset
-    output_dir: directory where glyph_XX.png will be saved
-    tile_size: pixel size per cell (default 256 for crisp 4096x4096 HD sheets)
+    Creates a Bedrock glyph sheet (16x16 grid) for a given unicode page.
+
+    Args:
+        glyph_page: 2-character hex string (e.g. 'E0')
+        tile_size: (width, height) tuple for each cell - matches original behavior
+                   where tile_size = (max_w+1, max_w+1) of all glyphs in this page
+        glyph_images: dict mapping hex suffix (2-char string like 'a3') -> PIL Image
+                      These images should already be processed (thumbnailed and pasted
+                      onto blank backgrounds by the caller).
+        output_dir: directory where glyph_XX.png will be saved
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    if not glyph_entries:
+    if not glyph_images:
         return None
 
-    # Base scale: 1 game font unit = (tile_size / 8.0) pixels
-    scale_unit = tile_size / 8.0
+    max_frames_row = 16
+    tile_w, tile_h = tile_size
 
-    sheet_dim = tile_size * 16
-    sheet = Image.new("RGBA", (sheet_dim, sheet_dim), (0, 0, 0, 0))
+    # We need exactly 256 slots (16x16 grid) but only non-blank ones will have content
+    # Calculate sheet dimensions
+    spritesheet_width = int(tile_w * max_frames_row)
+    spritesheet_height = int(tile_h * max_frames_row)
 
-    for sub_idx, entry in glyph_entries.items():
-        if not (0 <= sub_idx <= 255):
+    spritesheet = Image.new("RGBA", (spritesheet_width, spritesheet_height), (0, 0, 0, 0))
+
+    for hex_suffix, img in glyph_images.items():
+        # hex_suffix is like "a3" -> decimal index = 0xa3 = 163
+        try:
+            idx = int(hex_suffix, 16)
+        except ValueError:
             continue
 
-        if isinstance(entry, dict):
-            char_img = entry.get("img")
-            h_java = entry.get("height", 8)
-            a_java = entry.get("ascent", 7)
-            gui_offset = entry.get("gui_offset", [0, 0])
+        if not (0 <= idx <= 255):
+            continue
+
+        row = idx // max_frames_row
+        col = idx % max_frames_row
+
+        left = int(col * tile_w)
+        top = int(row * tile_h)
+
+        # Resize image to tile size if needed
+        if img.size != (int(tile_w), int(tile_h)):
+            # Create a blank tile and paste the image onto it
+            tile_img = Image.new("RGBA", (int(tile_w), int(tile_h)), (0, 0, 0, 0))
+            tile_img.paste(img, (0, 0), img if img.mode == "RGBA" else None)
+            spritesheet.paste(tile_img, (left, top), tile_img)
         else:
-            char_img = entry
-            h_java = 8
-            a_java = 7
-            gui_offset = [0, 0]
+            spritesheet.paste(img, (left, top), img if img.mode == "RGBA" else None)
 
-        if char_img is None:
-            continue
-
-        cw, ch = char_img.size
-        if cw <= 0 or ch <= 0:
-            continue
-
-        row = sub_idx // 16
-        col = sub_idx % 16
-
-        # Calculate exact target tile dimensions matching Java font height & aspect ratio
-        target_h = max(1, int(round(h_java * scale_unit)))
-        aspect_ratio = cw / float(ch)
-        target_w = max(1, int(round(target_h * aspect_ratio)))
-
-        # Choose resampling filter: LANCZOS for smooth high-res scaling
-        resample_filter = Resampling_NEAREST if (cw == target_w and ch == target_h) else Resampling_LANCZOS
-        img_to_paste = char_img.resize((target_w, target_h), resample_filter)
-
-        # Baseline alignment: Java standard ascent is 7 units from baseline
-        # Ascent A means baseline is A units below top of glyph
-        # Standard Bedrock baseline is at 7 units from cell top
-        y_baseline_offset = int(round((7 - a_java) * scale_unit))
-
-        dx = int(round(gui_offset[0] * scale_unit)) if len(gui_offset) > 0 else 0
-        dy = int(round(gui_offset[1] * scale_unit)) if len(gui_offset) > 1 else 0
-
-        pos_x = col * tile_size + dx
-        pos_y = row * tile_size + y_baseline_offset + dy
-
-        # Paste onto sheet, preserving alpha channel
-        sheet.paste(img_to_paste, (pos_x, pos_y), img_to_paste if img_to_paste.mode == "RGBA" else None)
-
-    out_file = os.path.join(output_dir, f"glyph_{glyph_page.upper()}.png")
-    sheet.save(out_file, "PNG")
-    print(f"[FONT] Saved Bedrock HD font sheet: {out_file} ({sheet_dim}x{sheet_dim}, {len(glyph_entries)} glyphs)")
+    out_file = os.path.join(output_dir, f"glyph_{glyph_page}.png")
+    spritesheet.save(out_file, "PNG")
+    print(f"[FONT] Saved glyph sheet: {out_file} ({spritesheet_width}x{spritesheet_height})")
     return out_file
