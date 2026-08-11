@@ -22,6 +22,7 @@ jobs:
       rename_model_files: ${{ steps.organize-inputs.outputs.RENAME_MODEL_FILES }}
       font_conversion: ${{ steps.organize-inputs.outputs.FONT_CONVERSION}}
       armor_conversion: ${{ steps.organize-inputs.outputs.ARMOR_CONVERSION}}
+      painting_conversion: ${{ steps.organize-inputs.outputs.PAINTING_CONVERSION }}
       meg3_fix: ${{ steps.organize-inputs.outputs.MEG3_FIX}}
       sounds_conversion: ${{ steps.organize-inputs.outputs.SOUNDS_CONVERSION }}
       bow_conversion: ${{ steps.organize-inputs.outputs.BOW_CONVERSION }}
@@ -48,6 +49,7 @@ jobs:
             "rename_model_files": test_input(.["rename-model-files"].text; "false"),
             "font_conversion": test_input(.["font-conversion"].text; "false"),
             "armor_conversion": test_input(.["armor-conversion"].text; "false"),
+            "painting_conversion": test_input(.["painting-conversion"].text; "false"),
             "meg3_fix": test_input(.["meg3-fix"].text; "false"),
             "sounds_conversion": test_input(.["sounds-conversion"].text; "false"),
             "bow_conversion": test_input(.["bow-conversion"].text; "false"),
@@ -64,10 +66,11 @@ jobs:
           echo "RENAME_MODEL_FILES=$(jq -r '.rename_model_files' inputs.json)" >> $GITHUB_OUTPUT
           echo "FONT_CONVERSION=$(jq -r '.font_conversion' inputs.json)" >> $GITHUB_OUTPUT
           echo "ARMOR_CONVERSION=$(jq -r '.armor_conversion' inputs.json)" >> $GITHUB_OUTPUT
+          echo "PAINTING_CONVERSION=$(jq -r '.painting_conversion' inputs.json)" >> $GITHUB_OUTPUT
           echo "MEG3_FIX=$(jq -r '.meg3_fix' inputs.json)" >> $GITHUB_OUTPUT
           echo "SOUNDS_CONVERSION=$(jq -r '.sounds_conversion' inputs.json)" >> $GITHUB_OUTPUT
           echo "BOW_CONVERSION=$(jq -r '.bow_conversion' inputs.json)" >> $GITHUB_OUTPUT
-          echo "SHIELD_CONVERSION=$(jq -r '.bow_conversion' inputs.json)" >> $GITHUB_OUTPUT
+          echo "SHIELD_CONVERSION=$(jq -r '.shield_conversion' inputs.json)" >> $GITHUB_OUTPUT
           echo "BLOCK_CONVERSION=$(jq -r '.block_conversion' inputs.json)" >> $GITHUB_OUTPUT
           
   convert-pack:
@@ -116,6 +119,7 @@ jobs:
           RENAME_MODEL_FILES: ${{ needs.get-pack-info.outputs.rename_model_files }}
           FONT_CONVERSION: ${{ needs.get-pack-info.outputs.font_conversion }}
           ARMOR_CONVERSION: ${{ needs.get-pack-info.outputs.armor_conversion }}
+          PAINTING_CONVERSION: ${{ needs.get-pack-info.outputs.painting_conversion }}
           MEG3_FIX: ${{ needs.get-pack-info.outputs.meg3_fix }}
           SOUNDS_CONVERSION: ${{ needs.get-pack-info.outputs.sounds_conversion }}
           BOW_CONVERSION: ${{ needs.get-pack-info.outputs.bow_conversion }}

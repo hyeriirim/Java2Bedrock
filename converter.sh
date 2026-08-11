@@ -154,9 +154,10 @@ then
 fi
 
 # ensure the directory that would contain predicate definitions exists
-if test -d "./assets/minecraft/models/item"
+item_dirs=($(find ./assets -type d -name "item" -path "*/models/item" 2>/dev/null))
+if [ ${#item_dirs[@]} -gt 0 ]
 then 
-  status_message completion "Minecraft namespace item folder found."
+  status_message completion "Item models folder found across pack namespaces (${#item_dirs[@]} directory/ies)."
 else
   # create our initial directories for bp & rp
   status_message process "Generating initial directory strucutre for our bedrock packs"
@@ -351,7 +352,7 @@ if contains(":") then sub("\\:(.+)"; "") else "minecraft" end
 | to_entries | map( ((.value.geyserID = "gmdl_\(1+.key)") | .value))
 | INDEX(.geyserID)
 
-' ./assets/minecraft/models/item/*.json > config.json || { status_message error "Invalid JSON exists in block or item folder! See above log."; exit 1; }
+' $(find ./assets -type f -name "*.json" -path "*/models/item/*" 2>/dev/null) > config.json || { status_message error "Invalid JSON exists in block or item folder! See above log."; exit 1; }
 status_message completion "Initial predicate config generated"
 
 # get a bash array of all model json files in our resource pack
@@ -1158,10 +1159,10 @@ cp ./target/rp/texts/en_US.lang ./target/rp/texts/en_GB.lang
 jq -n '["en_US","en_GB"]' | sponge ./target/rp/texts/languages.json
 status_message completion "en_US and en_GB lang files written\n"
 
-# Ensure images are in the correct color space
-status_message process "Setting all images to png8"
-find ./target/rp/textures -name '*.png' -exec mogrify -define png:format=png8  {} +
-status_message completion "All images set to png8"
+# Optimize textures without corrupting alpha transparency
+status_message process "Optimizing output textures"
+find ./target/rp/textures -name '*.png' -exec mogrify -strip {} + 2>/dev/null || true
+status_message completion "Output textures optimized"
 
 if [[ ${rename_model_files} == "true" ]]
 then

@@ -120,7 +120,16 @@ body:
     attributes:
       label: Armor Conversion
       description: |
-        Enable armor conversion (Only Itemsadder) default `false`.
+        Enable armor conversion (ItemsAdder & Oraxen) default `false`.
+      options:
+        - 'true'
+        - 'false'
+  - type: dropdown
+    id: painting-conversion
+    attributes:
+      label: Painting Conversion
+      description: |
+        Conversion Custom Paintings default `false`.
       options:
         - 'true'
         - 'false'
