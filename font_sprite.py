@@ -1,93 +1,87 @@
 """
 font_sprite.py - Bedrock glyph sheet assembler.
-Renders HD Bedrock font glyph sheets (16x16 character grid, 4096x4096) where
-each character is strictly contained within its own 256x256 cell tile, preventing
-any overlapping or bleeding into adjacent character slots.
+Faithfully implements the original AZPixel Java2Bedrock spritesheet generation:
+1. Calculates tile_size = max(max_w, max_h) + 1 for each page based on actual glyph dimensions.
+2. Places unscaled original glyphs into (tile_size, tile_size) cells (flush-left, centered vertically).
+3. Assembles the 16x16 grid sheet at (tile_size * 16, tile_size * 16) in-memory.
 """
 from PIL import Image
 import os
 
-try:
-    RESAMPLING_LANCZOS = Image.Resampling.LANCZOS
-    RESAMPLING_NEAREST = Image.Resampling.NEAREST
-except AttributeError:
-    RESAMPLING_LANCZOS = Image.LANCZOS
-    RESAMPLING_NEAREST = Image.NEAREST
 
-
-def create_glyph_sheet(glyph_page, glyph_entries, output_dir="staging/target/rp/font", tile_size=256):
+def create_glyph_sheet(glyph_page, glyph_entries, output_dir="staging/target/rp/font"):
     """
-    Creates an HD Bedrock font glyph sheet (16x16 grid of character cells) for a given unicode page.
+    Creates a Bedrock glyph sheet (16x16 grid) for a given unicode page,
+    matching the exact original AZPixel Java2Bedrock sizing and layout.
 
     glyph_page: 2-character hex string (e.g. 'E0', 'E2', '00', '1F')
-    glyph_entries: dict mapping sub_index (0..255) -> dict containing:
-        - "img": PIL Image object of the character crop
-        - "height": Java height property (optional)
-        - "ascent": Java ascent property (optional)
-        - "gui_offset": [dx, dy] optional GUI offset
+    glyph_entries: dict mapping sub_index (0..255) -> PIL Image object (or dict with "img")
     output_dir: directory where glyph_XX.png will be saved
-    tile_size: pixel size per cell (default 256 for crisp 4096x4096 HD sheets)
     """
     if not glyph_entries:
         return None
 
-    sheet_dim = tile_size * 16
-    sheet = Image.new("RGBA", (sheet_dim, sheet_dim), (0, 0, 0, 0))
-
+    # Extract raw images
+    images = {}
     for sub_idx, entry in glyph_entries.items():
         if not (0 <= sub_idx <= 255):
             continue
-
         if isinstance(entry, dict):
-            char_img = entry.get("img")
+            img = entry.get("img")
         else:
-            char_img = entry
+            img = entry
+        if img is not None and img.size[0] > 0 and img.size[1] > 0:
+            images[sub_idx] = img
 
-        if char_img is None:
-            continue
+    if not images:
+        return None
 
-        cw, ch = char_img.size
-        if cw <= 0 or ch <= 0:
-            continue
+    # Calculate tile size from actual glyph dimensions (exact original logic: max(maxsw, maxsh) + 1)
+    max_w = max(img.size[0] for img in images.values())
+    max_h = max(img.size[1] for img in images.values())
+    tile_dim = max(16, max(max_w, max_h) + 1)
+    tile_size = (tile_dim, tile_dim)
 
+    # 16x16 grid dimensions
+    sheet_w = tile_dim * 16
+    sheet_h = tile_dim * 16
+    spritesheet = Image.new("RGBA", (sheet_w, sheet_h), (0, 0, 0, 0))
+
+    for sub_idx, logo in images.items():
         row = sub_idx // 16
         col = sub_idx % 16
 
-        # Scale image to fit within the tile_size x tile_size cell while preserving aspect ratio
-        scale = min(float(tile_size) / float(cw), float(tile_size) / float(ch))
-        target_w = max(1, min(tile_size, int(round(cw * scale))))
-        target_h = max(1, min(tile_size, int(round(ch * scale))))
+        wl, hl = logo.size
 
-        # Choose resampling filter
-        resample_filter = RESAMPLING_NEAREST if (cw == target_w and ch == target_h) else RESAMPLING_LANCZOS
-        img_resized = char_img.resize((target_w, target_h), resample_filter)
+        # Create isolated blank cell (exact original logic)
+        cell = Image.new("RGBA", tile_size, (0, 0, 0, 0))
 
-        # Create a single isolated cell image
-        cell_img = Image.new("RGBA", (tile_size, tile_size), (0, 0, 0, 0))
+        # Position within cell (exact original logic):
+        # If glyph is larger than half the cell in both dimensions: top-left (0, 0)
+        # Otherwise: flush-left, centered vertically at (0, (h // 2) - (hl // 2))
+        if wl > (tile_dim // 2) and hl > (tile_dim // 2):
+            position = (0, 0)
+        else:
+            position = (0, (tile_dim // 2) - (hl // 2))
 
-        # Center the glyph within its own cell (so wide ranks are centered vertically, tall icons centered horizontally)
-        offset_x = (tile_size - target_w) // 2
-        offset_y = (tile_size - target_h) // 2
+        cell.paste(logo, position, logo if logo.mode == "RGBA" else None)
 
-        cell_img.paste(img_resized, (offset_x, offset_y), img_resized if img_resized.mode == "RGBA" else None)
+        # Paste cell into sheet at grid position
+        pos_x = col * tile_dim
+        pos_y = row * tile_dim
+        spritesheet.paste(cell, (pos_x, pos_y), cell)
 
-        # Paste the cell strictly at (col * tile_size, row * tile_size)
-        pos_x = col * tile_size
-        pos_y = row * tile_size
-
-        sheet.paste(cell_img, (pos_x, pos_y), cell_img)
-
-    # Save to output directories
+    # Save output
     out_dirs = [output_dir, "target/rp/font"] if output_dir != "target/rp/font" else [output_dir]
     out_file = None
     for od in out_dirs:
         try:
             os.makedirs(od, exist_ok=True)
             target_path = os.path.join(od, f"glyph_{glyph_page.upper()}.png")
-            sheet.save(target_path, "PNG")
+            spritesheet.save(target_path, "PNG")
             out_file = target_path
         except Exception as e:
-            print(f"[FONT] Warning saving {od}: {e}")
+            print(f"[FONT] Warning saving to {od}: {e}")
 
-    print(f"[FONT] Saved Bedrock HD font sheet: glyph_{glyph_page.upper()}.png ({sheet_dim}x{sheet_dim}, {len(glyph_entries)} glyphs)")
+    print(f"[FONT] Saved Bedrock font sheet: glyph_{glyph_page.upper()}.png ({sheet_w}x{sheet_h}, tile={tile_dim}x{tile_dim}, {len(images)} glyphs)")
     return out_file

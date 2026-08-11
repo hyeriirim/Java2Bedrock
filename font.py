@@ -2,8 +2,7 @@
 font.py - Java to Bedrock font glyph conversion.
 Scans font definition JSON files across all namespaces (ItemsAdder, Oraxen, Nexo,
 Minecraft, custom packs), parses bitmap providers, and converts them to Bedrock
-glyph sheets with exact Java font height & aspect-ratio parity for custom ranks,
-chat badges, emojis, and icons.
+glyph sheets matching the original AZPixel Java2Bedrock behavior.
 """
 import os
 import json
@@ -77,7 +76,6 @@ def process_font_files():
 
     # Check for optional font config / skip file
     skip_chars = set()
-    gui_offsets = {}
     config_paths = ["font_config.json", "pack/font_config.json", "pack/gui_font.json"]
     for cp in config_paths:
         if os.path.isfile(cp):
@@ -90,14 +88,12 @@ def process_font_files():
                                 cp_val = int(k, 16) if k.startswith("0x") else ord(k[0])
                                 if v.get("skip"):
                                     skip_chars.add(cp_val)
-                                if "gui" in v:
-                                    gui_offsets[cp_val] = v["gui"]
                             except Exception:
                                 pass
             except Exception as e:
                 print(f"[FONT] Warning reading {cp}: {e}")
 
-    # pages: page_hex -> { sub_idx: { "img": Image, "height": float, "ascent": float, "gui_offset": [dx, dy] } }
+    # pages: page_hex -> dict mapping sub_index (0..255) -> PIL Image crop
     pages = {}
 
     for font_path in font_files:
@@ -122,7 +118,7 @@ def process_font_files():
                     continue
                 ptype = prov.get("type", "bitmap")
                 if ptype == "space":
-                    continue  # Space advances are handled by game engine layout
+                    continue
                 if ptype != "bitmap" and "file" not in prov:
                     continue
 
@@ -131,16 +127,6 @@ def process_font_files():
 
                 if not file_ref or not chars or not isinstance(chars, list):
                     continue
-
-                try:
-                    prov_height = float(prov.get("height", 8.0))
-                except Exception:
-                    prov_height = 8.0
-
-                try:
-                    prov_ascent = float(prov.get("ascent", 7.0))
-                except Exception:
-                    prov_ascent = 7.0
 
                 tex_path = resolve_font_texture(file_ref, default_namespace=namespace)
                 if not tex_path:
@@ -180,7 +166,6 @@ def process_font_files():
                             int(round((c + 1) * w_cell)),
                             int(round((r + 1) * h_cell))
                         )
-                        # Ensure valid bounds
                         box = (
                             max(0, min(box[0], src_img.width)),
                             max(0, min(box[1], src_img.height)),
@@ -202,12 +187,7 @@ def process_font_files():
                         if page_hex not in pages:
                             pages[page_hex] = {}
 
-                        pages[page_hex][sub_idx] = {
-                            "img": char_crop,
-                            "height": prov_height,
-                            "ascent": prov_ascent,
-                            "gui_offset": gui_offsets.get(codepoint, [0, 0])
-                        }
+                        pages[page_hex][sub_idx] = char_crop
 
         except Exception as e:
             print(f"[FONT] Error processing {font_path}: {e}")
