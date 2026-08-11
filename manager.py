@@ -55,3 +55,10 @@ try:
         import blocks
 except Exception as e:
     print(f"[MANAGER] Block error: {e}")
+
+# Always guarantee geyser_mappings.json generation
+try:
+    import mappings
+    mappings.generate_geyser_mappings()
+except Exception as e:
+    print(f"[MANAGER] Mappings generation error: {e}")

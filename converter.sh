@@ -357,7 +357,7 @@ status_message completion "Initial predicate config generated"
 
 # get a bash array of all model json files in our resource pack
 status_message process "Generating an array of all model JSON files to crosscheck with our predicate config"
-json_dir=($(find ./assets/**/models -type f -name '*.json'))
+json_dir=($(find ./assets -type f -name '*.json' -path '*/models/*'))
 
 # ensure all our reference files in config.json exist, and delete the entry if they do not
 status_message critical "Removing config entries that do not have an associated JSON file in the pack"
@@ -748,7 +748,7 @@ model_list=( $(jq -r '.[] | select(.generated == false) | .path' config.json) )
 # get our final texture list to be atlased
 # get a bash array of all texture files in our resource pack
 status_message process "Generating an array of all model PNG files to crosscheck with our atlas"
-jq -n '$ARGS.positional' --args $(find ./assets/**/textures -type f -name '*.png') | sponge scratch_files/all_textures.temp
+jq -n '$ARGS.positional' --args $(find ./assets -type f -name '*.png' -path '*/textures/*') | sponge scratch_files/all_textures.temp
 # get bash array of all texture files listed in our models
 status_message process "Generating union atlas arrays for all model textures"
 jq -s '
@@ -1245,28 +1245,29 @@ fi
 status_message process "Creating Geyser mappings in target directory"
 echo
 jq '
-([map(
-  {
-    ("minecraft:" + .item): [
-      {
+def to_mappings:
+  if type == "object" then . else {} end
+  | to_entries
+  | map(.value)
+  | group_by(.item)
+  | map({
+      ("minecraft:" + .[0].item): map({
         "name": .path_hash,
         "allow_offhand": true,
-        "icon": (if .generated == true then .path_hash else .bedrock_icon.icon end)
+        "icon": (if .generated == true then .path_hash else (.bedrock_icon.icon // "camera") end)
       }
-      + (if (.generated == false) then {"frame": (.bedrock_icon.frame)} else {} end)
-      + (if .nbt.CustomModelData then {"custom_model_data": (.nbt.CustomModelData)} else {} end)
-      + (if .nbt.Damage then {"damage_predicate": (.nbt.Damage)} else {} end)
-      + (if .nbt.Unbreakable then {"unbreakable": (.nbt.Unbreakable)} else {} end)
-    ]
-  }
-) 
-| map(to_entries[])
-| group_by(.key)[] 
-| {(.[0].key) : map(.value) | add}] | add) as $mappings
-| {
-    "format_version": "1",
-    "items": $mappings
-  }
+      + (if (.generated == false and .bedrock_icon.frame != null) then {"frame": .bedrock_icon.frame} else {} end)
+      + (if .nbt.CustomModelData != null then {"custom_model_data": .nbt.CustomModelData} else {} end)
+      + (if .nbt.Damage != null then {"damage_predicate": .nbt.Damage} else {} end)
+      + (if .nbt.Unbreakable != null then {"unbreakable": .nbt.Unbreakable} else {} end)
+      )
+    })
+  | add // {};
+
+{
+  "format_version": "1",
+  "items": (to_mappings)
+}
 ' config.json | sponge ./target/geyser_mappings.json
 
 # Add sprites if sprites.json exists in the root pack

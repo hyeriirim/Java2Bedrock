@@ -70,7 +70,7 @@ def process_font_files():
             except Exception as e:
                 print(f"[FONT] Warning reading {cp}: {e}")
 
-    # pages: dict[str, dict[int, Image]] -> page_hex -> { sub_idx: Image }
+    # pages: dict[str, dict[int, dict]] -> page_hex -> { sub_idx: { "img": Image, "height": int, "ascent": int, "gui_offset": [dx, dy] } }
     pages = {}
 
     for font_path in font_files:
@@ -102,6 +102,16 @@ def process_font_files():
                 if not file_ref or not chars or not isinstance(chars, list):
                     continue
 
+                try:
+                    prov_height = float(prov.get("height", 8))
+                except Exception:
+                    prov_height = 8.0
+
+                try:
+                    prov_ascent = float(prov.get("ascent", 7))
+                except Exception:
+                    prov_ascent = 7.0
+
                 tex_path = resolve_texture_file(file_ref, default_namespace=namespace)
                 if not tex_path:
                     print(f"[FONT] Warning: Texture {file_ref} not found for font {font_path}")
@@ -124,8 +134,8 @@ def process_font_files():
                     if num_cols == 0:
                         continue
 
-                    w_cell = src_img.width / num_cols
-                    h_cell = src_img.height / num_rows
+                    w_cell = src_img.width / float(num_cols)
+                    h_cell = src_img.height / float(num_rows)
 
                     for c, ch in enumerate(row_str):
                         codepoint = ord(ch)
@@ -161,7 +171,13 @@ def process_font_files():
 
                         if page_hex not in pages:
                             pages[page_hex] = {}
-                        pages[page_hex][sub_idx] = char_crop
+
+                        pages[page_hex][sub_idx] = {
+                            "img": char_crop,
+                            "height": prov_height,
+                            "ascent": prov_ascent,
+                            "gui_offset": gui_offsets.get(codepoint, [0, 0])
+                        }
 
         except Exception as e:
             print(f"[FONT] Error processing {font_path}: {e}")
