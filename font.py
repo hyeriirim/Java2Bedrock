@@ -128,6 +128,11 @@ def process_font_files():
                 if not file_ref or not chars or not isinstance(chars, list):
                     continue
 
+                try:
+                    prov_height = float(prov.get("height", 8.0))
+                except Exception:
+                    prov_height = 8.0
+
                 tex_path = resolve_font_texture(file_ref, default_namespace=namespace)
                 if not tex_path:
                     print(f"[FONT] Warning: Texture {file_ref} not found for font {font_path}")
@@ -187,7 +192,10 @@ def process_font_files():
                         if page_hex not in pages:
                             pages[page_hex] = {}
 
-                        pages[page_hex][sub_idx] = char_crop
+                        pages[page_hex][sub_idx] = {
+                            "img": char_crop,
+                            "height": prov_height,
+                        }
 
         except Exception as e:
             print(f"[FONT] Error processing {font_path}: {e}")
